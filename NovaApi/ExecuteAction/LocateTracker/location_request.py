@@ -9,6 +9,7 @@ from Auth.fcm_receiver import FcmReceiver
 from example_data_provider import get_example_data
 from NovaApi.ExecuteAction.LocateTracker.decrypt_locations import (
     decrypt_location_response_locations,
+    print_decrypted_location_response_locations,
 )
 from NovaApi.ExecuteAction.nbe_execute_action import (
     create_action_request,
@@ -38,9 +39,7 @@ def create_location_request(canonic_device_id, fcm_registration_id, request_uuid
     return hex_payload
 
 
-def get_location_data_for_device(canonic_device_id, name):
-    print(f"[LocationRequest] Requesting location data for {name}...")
-
+def get_location_data_for_device(canonic_device_id):
     result = None
     request_uuid = generate_random_uuid()
 
@@ -49,9 +48,7 @@ def get_location_data_for_device(canonic_device_id, name):
         device_update = parse_device_update_protobuf(response)
 
         if device_update.fcmMetadata.requestUuid == request_uuid:
-            print(
-                "[LocationRequest] Location request successful. Decrypting locations..."
-            )
+            # print("[LocationRequest] Location request successful. Decrypting locations...")
             result = parse_device_update_protobuf(response)
             # print_device_update_protobuf(response)
 
@@ -63,8 +60,11 @@ def get_location_data_for_device(canonic_device_id, name):
     while result is None:
         asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.1))
 
-    decrypt_location_response_locations(result)
+    return decrypt_location_response_locations(result)
 
 
 if __name__ == "__main__":
-    get_location_data_for_device(get_example_data("sample_canonic_device_id"), "Test")
+    locations = get_location_data_for_device(
+        get_example_data("sample_canonic_device_id"), "Test"
+    )
+    print_decrypted_location_response_locations(locations)

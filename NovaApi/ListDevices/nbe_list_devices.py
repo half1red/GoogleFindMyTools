@@ -7,6 +7,7 @@ import binascii
 
 from NovaApi.ExecuteAction.LocateTracker.location_request import (
     get_location_data_for_device,
+    print_decrypted_location_response_locations,
 )
 from NovaApi.nova_request import nova_request
 from NovaApi.scopes import NOVA_LIST_DEVICS_API_SCOPE
@@ -75,7 +76,11 @@ def list_devices():
         selected_device_name = canonic_ids[selected_idx][0]
         selected_canonic_id = canonic_ids[selected_idx][1]
 
-        get_location_data_for_device(selected_canonic_id, selected_device_name)
+        print(
+            f"[LocationRequest] Requesting location data for {selected_device_name}..."
+        )
+        locations = get_location_data_for_device(selected_canonic_id)
+        print_decrypted_location_response_locations(locations)
 
 
 if __name__ == "__main__":
