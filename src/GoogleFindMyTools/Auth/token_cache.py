@@ -6,7 +6,11 @@
 import json
 import os
 
-SECRETS_FILE = "secrets.json"
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# GFINDMY_SECRETS_FILE = "secrets.json"
 
 
 def get_cached_value_or_set(name: str, generator: callable):
@@ -52,8 +56,13 @@ def set_cached_value(name: str, value: str):
 
 
 def _get_secrets_file():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(script_dir, SECRETS_FILE)
+    GFINDMY_SECRETS_FILE = os.getenv("GFINDMY_SECRETS_FILE")
+    if GFINDMY_SECRETS_FILE:
+        return GFINDMY_SECRETS_FILE
+
+    return os.path.realpath(
+        os.path.expanduser(os.path.join("~/", ".gfindmy_secrets.json"))
+    )
 
 
 def delete_secrets_file(name: str):
