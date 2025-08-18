@@ -2,16 +2,20 @@ import asyncio
 import base64
 import binascii
 import threading
+from concurrent.futures import Future
+from typing import Dict, Optional
 
 from GoogleFindMyTools.Auth.firebase_messaging import FcmPushClient, FcmRegisterConfig
 from GoogleFindMyTools.Auth.token_cache import get_cached_value, set_cached_value
+from GoogleFindMyTools.ProtoDecoders.decoder import parse_device_update_protobuf
 
 
 class FcmReceiver:
     _instance = None
-    _listening = False
-    _loop = None
-    _loop_thread = None
+
+    # Loop et thread unique pour tout le process
+    _loop: Optional[asyncio.AbstractEventLoop] = None
+    _loop_thread: Optional[threading.Thread] = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -19,7 +23,7 @@ class FcmReceiver:
         return cls._instance
 
     def __init__(self):
-        if hasattr(self, "_initialized") and self._initialized:
+        if getattr(self, "_initialized", False):
             return
         self._initialized = True
 
@@ -38,7 +42,6 @@ class FcmReceiver:
         )
 
         self.credentials = get_cached_value("fcm_credentials")
-        self.location_update_callbacks = []
         self.pc = FcmPushClient(
             self._on_notification,
             fcm_config,
@@ -46,7 +49,15 @@ class FcmReceiver:
             self._on_credentials_updated,
         )
 
-        # Start background event loop
+        # Gestion de l'état
+        self._listening = False
+        self._start_lock = threading.Lock()
+
+        # Registre de corrélation: request_uuid -> Future
+        self._pending: Dict[str, Future] = {}
+        self._pending_lock = threading.Lock()
+
+        # Démarre la boucle en arrière-plan au premier import
         if FcmReceiver._loop is None:
             FcmReceiver._loop = asyncio.new_event_loop()
             FcmReceiver._loop_thread = threading.Thread(
@@ -54,77 +65,115 @@ class FcmReceiver:
             )
             FcmReceiver._loop_thread.start()
 
-    def _run_loop(self, loop):
+    # --- Loop management
+
+    def _run_loop(self, loop: asyncio.AbstractEventLoop):
         asyncio.set_event_loop(loop)
         loop.run_forever()
 
-    def register_for_location_updates(self, callback):
-        if not self._listening:
-            fut = asyncio.run_coroutine_threadsafe(
-                self._register_for_fcm_and_listen(), FcmReceiver._loop
-            )
-            fut.result()  # Wait for registration to complete
+    def _run_coro(self, coro):
+        """Soumet un coroutine à la boucle de fond et attend le résultat (thread-safe)."""
+        fut = asyncio.run_coroutine_threadsafe(coro, FcmReceiver._loop)
+        return fut.result()
 
-        self.location_update_callbacks.append(callback)
+    def ensure_started(self):
+        """Démarre l'enregistrement FCM et l'écoute une seule fois, de façon thread-safe."""
+        if self._listening:
+            return
+        with self._start_lock:
+            if self._listening:
+                return
+            self._run_coro(self._register_for_fcm_and_listen())
+            self._listening = True
 
+    # --- Public helpers
+
+    def get_fcm_token(self) -> str:
+        """Assure le démarrage et renvoie le token FCM."""
+        self.ensure_started()
         return self.credentials["fcm"]["registration"]["token"]
 
-    def stop_listening(self):
-        fut = asyncio.run_coroutine_threadsafe(self.pc.stop(), FcmReceiver._loop)
-        fut.result()
-        self._listening = False
-
-    def get_android_id(self):
-        if self.credentials is None:
-            fut = asyncio.run_coroutine_threadsafe(
-                self._register_for_fcm_and_listen(), FcmReceiver._loop
-            )
-            fut.result()
-
+    def get_android_id(self) -> str:
+        """Assure le démarrage et renvoie l'android_id."""
+        self.ensure_started()
         return self.credentials["gcm"]["android_id"]
 
-    # Define a callback function for handling notifications
+    # --- Corrélation request/response
+
+    def prepare_request(self, request_uuid: str) -> Future:
+        """Crée et enregistre une Future pour ce request_uuid."""
+        fut = Future()
+        with self._pending_lock:
+            if request_uuid in self._pending:
+                raise RuntimeError(f"Duplicate request_uuid: {request_uuid}")
+            self._pending[request_uuid] = fut
+        return fut
+
+    def cancel_request(self, request_uuid: str, exc: Optional[BaseException] = None):
+        """Annule et nettoie une requête en attente (timeout, erreur réseau, etc.)."""
+        with self._pending_lock:
+            fut = self._pending.pop(request_uuid, None)
+        if fut and not fut.done():
+            if exc:
+                fut.set_exception(exc)
+            else:
+                fut.cancel()
+
+    # --- Notification handler
+
     def _on_notification(self, obj, notification, data_message):
-        # Check if the payload is present
-        if "data" in obj and "com.google.android.apps.adm.FCM_PAYLOAD" in obj["data"]:
-            # Decode the base64 string
-            base64_string = obj["data"]["com.google.android.apps.adm.FCM_PAYLOAD"]
-            decoded_bytes = base64.b64decode(base64_string)
+        """Callback appelée par FcmPushClient sur réception d'une notif FCM."""
+        try:
+            if (
+                "data" in obj
+                and "com.google.android.apps.adm.FCM_PAYLOAD" in obj["data"]
+            ):
+                base64_string = obj["data"]["com.google.android.apps.adm.FCM_PAYLOAD"]
+                decoded_bytes = base64.b64decode(base64_string)
+                hex_string = binascii.hexlify(decoded_bytes).decode("utf-8")
 
-            # print("[FCMReceiver] Decoded FMDN Message:", decoded_bytes.hex())
+                # On parse pour extraire requestUuid et corréler
+                device_update = parse_device_update_protobuf(hex_string)
+                request_uuid = getattr(
+                    getattr(device_update, "fcmMetadata", None), "requestUuid", None
+                )
 
-            # Convert to hex string
-            hex_string = binascii.hexlify(decoded_bytes).decode("utf-8")
-
-            for callback in self.location_update_callbacks:
-                callback(hex_string)
-        else:
-            print("[FCMReceiver] Payload not found in the notification.")
+                if request_uuid:
+                    with self._pending_lock:
+                        fut = self._pending.pop(request_uuid, None)
+                    if fut and not fut.done():
+                        # On renvoie la payload hex brute (ou device_update si tu préfères)
+                        fut.set_result(hex_string)
+                else:
+                    # Pas de requestUuid: ignorer ou logguer
+                    pass
+            else:
+                # Payload non trouvée: ignorer ou logguer
+                pass
+        except Exception as e:
+            # En cas d'erreur de parsing, on ne casse pas tout: log possible.
+            pass
 
     def _on_credentials_updated(self, creds):
         self.credentials = creds
-
-        # Also store to disk
         set_cached_value("fcm_credentials", self.credentials)
-        print("[FCMReceiver] Credentials updated.")
+
+    # --- Async internals
 
     async def _register_for_fcm(self):
         fcm_token = None
-
-        # Register or check in with FCM and get the FCM token
         while fcm_token is None:
             try:
                 fcm_token = await self.pc.checkin_or_register()
-            except Exception as e:
+            except Exception:
                 await self.pc.stop()
-                print("[FCMReceiver] Failed to register with FCM. Retrying...")
                 await asyncio.sleep(5)
 
     async def _register_for_fcm_and_listen(self):
         await self._register_for_fcm()
-        await self.pc.start()
-        self._listening = True
-        # print("[FCMReceiver] Listening for notifications. This can take a few seconds...")
+        if not self._listening:
+            await self.pc.start()
+        # Ne pas print en prod
 
 
 if __name__ == "__main__":
