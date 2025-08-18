@@ -36,7 +36,11 @@ if __name__ == "__main__":
     print("Devices are :")
     devices = list_devices()
     print(devices)
-    if devices:
-        print("Getting location for first device...")
-        locations = device_locations(devices[0][1])
+    # if devices:
+    #     print("Getting location for first device...")
+    #     locations = device_locations(devices[0][1])
+    #     print(locations)
+
+    for device in devices:
+        locations = device_locations(device[1])
         print(locations)
