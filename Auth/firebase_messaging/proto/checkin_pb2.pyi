@@ -8,13 +8,15 @@ found in the LICENSE file.
 Request and reply to the "checkin server" devices poll every few hours.
 """
 
-from . import android_checkin_pb2
 import builtins
 import collections.abc
+import sys
+
 import google.protobuf.descriptor
 import google.protobuf.internal.containers
 import google.protobuf.message
-import sys
+
+from . import android_checkin_pb2
 
 if sys.version_info >= (3, 8):
     import typing as typing_extensions

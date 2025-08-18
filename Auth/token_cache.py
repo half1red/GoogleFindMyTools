@@ -6,10 +6,10 @@
 import json
 import os
 
-SECRETS_FILE = 'secrets.json'
+SECRETS_FILE = "secrets.json"
+
 
 def get_cached_value_or_set(name: str, generator: callable):
-
     existing_value = get_cached_value(name)
 
     if existing_value is not None:
@@ -24,7 +24,7 @@ def get_cached_value(name: str):
     secrets_file = _get_secrets_file()
 
     if os.path.exists(secrets_file):
-        with open(secrets_file, 'r') as file:
+        with open(secrets_file, "r") as file:
             try:
                 data = json.load(file)
                 value = data.get(name)
@@ -39,7 +39,7 @@ def set_cached_value(name: str, value: str):
     secrets_file = _get_secrets_file()
 
     if os.path.exists(secrets_file):
-        with open(secrets_file, 'r') as file:
+        with open(secrets_file, "r") as file:
             try:
                 data = json.load(file)
             except json.JSONDecodeError:
@@ -47,7 +47,7 @@ def set_cached_value(name: str, value: str):
     else:
         data = {}
     data[name] = value
-    with open(secrets_file, 'w') as file:
+    with open(secrets_file, "w") as file:
         json.dump(data, file)
 
 

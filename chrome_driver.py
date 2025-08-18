@@ -3,10 +3,12 @@
 #  Copyright © 2024 Leon Böttger. All rights reserved.
 #
 
-import undetected_chromedriver as uc
 import os
-import shutil
 import platform
+import shutil
+
+import undetected_chromedriver as uc
+
 
 def find_chrome():
     """Find Chrome executable using known paths and system commands."""
@@ -19,7 +21,7 @@ def find_chrome():
         "/usr/local/bin/google-chrome",
         "/opt/google/chrome/chrome",
         "/snap/bin/chromium",
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     ]
 
     # Check predefined paths
@@ -60,7 +62,9 @@ def create_driver():
         print("[ChromeDriver] Installed and browser started.")
         return driver
     except Exception:
-        print("[ChromeDriver] Default ChromeDriver creation failed. Trying alternative paths...")
+        print(
+            "[ChromeDriver] Default ChromeDriver creation failed. Trying alternative paths..."
+        )
 
         chrome_path = find_chrome()
         if chrome_path:
@@ -71,7 +75,9 @@ def create_driver():
                 print(f"[ChromeDriver] ChromeDriver started using {chrome_path}")
                 return driver
             except Exception as e:
-                print(f"[ChromeDriver] ChromeDriver failed using path {chrome_path}: {e}")
+                print(
+                    f"[ChromeDriver] ChromeDriver failed using path {chrome_path}: {e}"
+                )
         else:
             print("[ChromeDriver] No Chrome executable found in known paths.")
 
@@ -82,5 +88,5 @@ def create_driver():
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     create_driver()

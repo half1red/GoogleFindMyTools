@@ -2,11 +2,11 @@ import asyncio
 import base64
 import binascii
 
-from Auth.firebase_messaging import FcmRegisterConfig, FcmPushClient
-from Auth.token_cache import set_cached_value, get_cached_value
+from Auth.firebase_messaging import FcmPushClient, FcmRegisterConfig
+from Auth.token_cache import get_cached_value, set_cached_value
+
 
 class FcmReceiver:
-
     _instance = None
     _listening = False
 
@@ -16,7 +16,7 @@ class FcmReceiver:
         return cls._instance
 
     def __init__(self):
-        if hasattr(self, '_initialized') and self._initialized:
+        if hasattr(self, "_initialized") and self._initialized:
             return
         self._initialized = True
 
@@ -34,62 +34,61 @@ class FcmReceiver:
             bundle_id="com.google.android.apps.adm",
         )
 
-        self.credentials = get_cached_value('fcm_credentials')
+        self.credentials = get_cached_value("fcm_credentials")
         self.location_update_callbacks = []
-        self.pc = FcmPushClient(self._on_notification, fcm_config, self.credentials, self._on_credentials_updated)
-
+        self.pc = FcmPushClient(
+            self._on_notification,
+            fcm_config,
+            self.credentials,
+            self._on_credentials_updated,
+        )
 
     def register_for_location_updates(self, callback):
-
         if not self._listening:
-            asyncio.get_event_loop().run_until_complete(self._register_for_fcm_and_listen())
+            asyncio.get_event_loop().run_until_complete(
+                self._register_for_fcm_and_listen()
+            )
 
         self.location_update_callbacks.append(callback)
 
-        return self.credentials['fcm']['registration']['token']
-
+        return self.credentials["fcm"]["registration"]["token"]
 
     def stop_listening(self):
         asyncio.get_event_loop().run_until_complete(self.pc.stop())
         self._listening = False
 
-
     def get_android_id(self):
-
         if self.credentials is None:
-            return asyncio.get_event_loop().run_until_complete(self._register_for_fcm_and_listen())
+            return asyncio.get_event_loop().run_until_complete(
+                self._register_for_fcm_and_listen()
+            )
 
-        return self.credentials['gcm']['android_id']
-
+        return self.credentials["gcm"]["android_id"]
 
     # Define a callback function for handling notifications
     def _on_notification(self, obj, notification, data_message):
-
         # Check if the payload is present
-        if 'data' in obj and 'com.google.android.apps.adm.FCM_PAYLOAD' in obj['data']:
-
+        if "data" in obj and "com.google.android.apps.adm.FCM_PAYLOAD" in obj["data"]:
             # Decode the base64 string
-            base64_string = obj['data']['com.google.android.apps.adm.FCM_PAYLOAD']
+            base64_string = obj["data"]["com.google.android.apps.adm.FCM_PAYLOAD"]
             decoded_bytes = base64.b64decode(base64_string)
 
             # print("[FCMReceiver] Decoded FMDN Message:", decoded_bytes.hex())
 
             # Convert to hex string
-            hex_string = binascii.hexlify(decoded_bytes).decode('utf-8')
+            hex_string = binascii.hexlify(decoded_bytes).decode("utf-8")
 
             for callback in self.location_update_callbacks:
                 callback(hex_string)
         else:
             print("[FCMReceiver] Payload not found in the notification.")
 
-
     def _on_credentials_updated(self, creds):
         self.credentials = creds
 
         # Also store to disk
-        set_cached_value('fcm_credentials', self.credentials)
+        set_cached_value("fcm_credentials", self.credentials)
         print("[FCMReceiver] Credentials updated.")
-
 
     async def _register_for_fcm(self):
         fcm_token = None
@@ -103,12 +102,13 @@ class FcmReceiver:
                 print("[FCMReceiver] Failed to register with FCM. Retrying...")
                 await asyncio.sleep(5)
 
-
     async def _register_for_fcm_and_listen(self):
         await self._register_for_fcm()
         await self.pc.start()
         self._listening = True
-        print("[FCMReceiver] Listening for notifications. This can take a few seconds...")
+        print(
+            "[FCMReceiver] Listening for notifications. This can take a few seconds..."
+        )
 
 
 if __name__ == "__main__":
