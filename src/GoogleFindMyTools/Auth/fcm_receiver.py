@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import threading
 
 from GoogleFindMyTools.Auth.firebase_messaging import FcmPushClient, FcmRegisterConfig
 from GoogleFindMyTools.Auth.token_cache import get_cached_value, set_cached_value
@@ -9,6 +10,8 @@ from GoogleFindMyTools.Auth.token_cache import get_cached_value, set_cached_valu
 class FcmReceiver:
     _instance = None
     _listening = False
+    _loop = None
+    _loop_thread = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -43,25 +46,40 @@ class FcmReceiver:
             self._on_credentials_updated,
         )
 
+        # Start background event loop
+        if FcmReceiver._loop is None:
+            FcmReceiver._loop = asyncio.new_event_loop()
+            FcmReceiver._loop_thread = threading.Thread(
+                target=self._run_loop, args=(FcmReceiver._loop,), daemon=True
+            )
+            FcmReceiver._loop_thread.start()
+
+    def _run_loop(self, loop):
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
     def register_for_location_updates(self, callback):
         if not self._listening:
-            asyncio.get_event_loop().run_until_complete(
-                self._register_for_fcm_and_listen()
+            fut = asyncio.run_coroutine_threadsafe(
+                self._register_for_fcm_and_listen(), FcmReceiver._loop
             )
+            fut.result()  # Wait for registration to complete
 
         self.location_update_callbacks.append(callback)
 
         return self.credentials["fcm"]["registration"]["token"]
 
     def stop_listening(self):
-        asyncio.get_event_loop().run_until_complete(self.pc.stop())
+        fut = asyncio.run_coroutine_threadsafe(self.pc.stop(), FcmReceiver._loop)
+        fut.result()
         self._listening = False
 
     def get_android_id(self):
         if self.credentials is None:
-            return asyncio.get_event_loop().run_until_complete(
-                self._register_for_fcm_and_listen()
+            fut = asyncio.run_coroutine_threadsafe(
+                self._register_for_fcm_and_listen(), FcmReceiver._loop
             )
+            fut.result()
 
         return self.credentials["gcm"]["android_id"]
 

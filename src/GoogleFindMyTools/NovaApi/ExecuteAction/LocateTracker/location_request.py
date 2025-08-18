@@ -3,7 +3,8 @@
 #  Copyright © 2024 Leon Böttger. All rights reserved.
 #
 
-import asyncio
+# import asyncio
+# import threading
 
 from GoogleFindMyTools.Auth.fcm_receiver import FcmReceiver
 from GoogleFindMyTools.example_data_provider import get_example_data
@@ -42,23 +43,29 @@ def create_location_request(canonic_device_id, fcm_registration_id, request_uuid
 def get_location_data_for_device(canonic_device_id):
     result = None
     request_uuid = generate_random_uuid()
+    # done_event = threading.Event()
 
     def handle_location_response(response):
         nonlocal result
         device_update = parse_device_update_protobuf(response)
 
         if device_update.fcmMetadata.requestUuid == request_uuid:
-            # print("[LocationRequest] Location request successful. Decrypting locations...")
             result = parse_device_update_protobuf(response)
-            # print_device_update_protobuf(response)
+            # done_event.set()
 
     fcm_token = FcmReceiver().register_for_location_updates(handle_location_response)
 
     hex_payload = create_location_request(canonic_device_id, fcm_token, request_uuid)
     nova_request(NOVA_ACTION_API_SCOPE, hex_payload)
 
+    # Wait for the callback to set the result, with a timeout to avoid infinite hang
+    # done_event.wait(timeout=60)  # Timeout in seconds, adjust as needed
+    import time
+
     while result is None:
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.1))
+        time.sleep(0.1)  # Wait for the result to be set
+    # if result is None:
+    #     raise TimeoutError("Location request timed out.")
 
     return decrypt_location_response_locations(result)
 
