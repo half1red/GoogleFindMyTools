@@ -4,6 +4,8 @@
 #
 
 
+import asyncio
+
 from GoogleFindMyTools.NovaApi.ExecuteAction.LocateTracker.location_request import (
     get_location_data_for_device,
 )
@@ -27,8 +29,8 @@ def list_devices():
     return canonic_ids
 
 
-def device_locations(canonic_ids):
-    return get_location_data_for_device(canonic_ids)
+async def device_locations(canonic_ids):
+    return await get_location_data_for_device(canonic_ids)
 
 
 if __name__ == "__main__":
@@ -40,7 +42,20 @@ if __name__ == "__main__":
     #     print("Getting location for first device...")
     #     locations = device_locations(devices[0][1])
     #     print(locations)
+    device_ids = [device[1] for device in devices]
 
-    for device in devices:
-        locations = device_locations(device[1])
-        print(locations)
+    async def runner():
+        for dev_id in device_ids:
+            print(f"Getting location for device: {dev_id}")
+            result = await get_location_data_for_device(dev_id)
+            print(dev_id, result)
+        print("All tasks completed. Closing after all waits done")
+        # for task in asyncio.all_tasks():
+        #     print(task)
+
+    # Une seule fois dans tout le programme
+    asyncio.run(runner())
+    # for device in devices:
+    #     print(f"Getting location for device: {device[1]}")
+    #     locations = asyncio.run(device_locations(device[1]))
+    #     print(locations)

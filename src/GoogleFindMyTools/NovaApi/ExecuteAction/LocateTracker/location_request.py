@@ -6,6 +6,8 @@
 # import asyncio
 # import threading
 
+import asyncio
+
 from GoogleFindMyTools.Auth.fcm_receiver import FcmReceiver
 from GoogleFindMyTools.example_data_provider import get_example_data
 from GoogleFindMyTools.NovaApi.ExecuteAction.LocateTracker.decrypt_locations import (
@@ -40,9 +42,9 @@ def create_location_request(canonic_device_id, fcm_registration_id, request_uuid
     return hex_payload
 
 
-def get_location_data_for_device(canonic_device_id: str, timeout: float = 60.0):
+async def get_location_data_for_device(canonic_device_id: str, timeout: float = 60.0):
     receiver = FcmReceiver()
-    receiver.ensure_started()
+    await receiver.ensure_started()
 
     request_uuid = generate_random_uuid()
     fut = receiver.prepare_request(request_uuid)
@@ -54,10 +56,17 @@ def get_location_data_for_device(canonic_device_id: str, timeout: float = 60.0):
         )
 
         # Envoi de la requête (HTTP/gRPC/whatever) – synchrone côté appelant
-        nova_request(NOVA_ACTION_API_SCOPE, hex_payload)
+        # nova_request(NOVA_ACTION_API_SCOPE, hex_payload)
+        await asyncio.to_thread(nova_request, NOVA_ACTION_API_SCOPE, hex_payload)
 
         # Attend la réponse corrélée par request_uuid
-        hex_response = fut.result(timeout=timeout)
+        # hex_response = fut.result(timeout=timeout)
+
+        try:
+            hex_response = await asyncio.wait_for(fut, timeout=timeout)
+        except Exception as e:
+            print("Error occurred while waiting for response")
+            receiver.cancel_request(request_uuid, exc=e)
 
         # Transforme le résultat
         device_update = parse_device_update_protobuf(hex_response)
