@@ -25,9 +25,6 @@ class FcmReceiver:
         self._start_lock = asyncio.Lock()
         self._pending: Dict[str, asyncio.Future] = {}
 
-        # Expose the event loop
-        self._loop = asyncio.get_event_loop()
-
         self.credentials = get_cached_value("fcm_credentials")
         self.pc = FcmPushClient(
             self._on_notification,
@@ -41,11 +38,6 @@ class FcmReceiver:
             self.credentials,
             self._on_credentials_updated,
         )
-
-    @property
-    def loop(self):
-        """Expose the asyncio event loop used by this receiver."""
-        return self._loop
 
     async def ensure_started(self):
         async with self._start_lock:
@@ -62,7 +54,7 @@ class FcmReceiver:
     def prepare_request(self, request_uuid: str) -> asyncio.Future:
         if request_uuid in self._pending:
             raise RuntimeError(f"Duplicate request_uuid: {request_uuid}")
-        fut = self._loop.create_future()
+        fut = asyncio.get_event_loop().create_future()
         self._pending[request_uuid] = fut
         return fut
 
