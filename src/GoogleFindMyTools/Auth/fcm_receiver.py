@@ -3,7 +3,11 @@ import base64
 import binascii
 from typing import Dict, Optional
 
-from GoogleFindMyTools.Auth.firebase_messaging import FcmPushClient, FcmRegisterConfig
+from GoogleFindMyTools.Auth.firebase_messaging import (
+    FcmPushClient,
+    FcmPushClientRunState,
+    FcmRegisterConfig,
+)
 from GoogleFindMyTools.Auth.token_cache import get_cached_value, set_cached_value
 from GoogleFindMyTools.ProtoDecoders.decoder import parse_device_update_protobuf
 
@@ -41,6 +45,25 @@ class FcmReceiver:
 
     async def ensure_started(self):
         async with self._start_lock:
+            if self.pc.run_state in [
+                FcmPushClientRunState.STOPPING,
+                FcmPushClientRunState.STOPPED,
+            ]:
+                # On recrée un push client
+                print("Le client s'est arrêté, on en recrée un.")
+                self._listening = False
+                self.pc = FcmPushClient(
+                    self._on_notification,
+                    FcmRegisterConfig(
+                        project_id="google.com:api-project-289722593072",
+                        app_id="1:289722593072:android:3cfcf5bc359f0308",
+                        api_key="AIzaSyD_gko3P392v6how2H7UpdeXQ0v2HLettc",
+                        messaging_sender_id="289722593072",
+                        bundle_id="com.google.android.apps.adm",
+                    ),
+                    self.credentials,
+                    self._on_credentials_updated,
+                )
             if not self._listening:
                 await self._register_for_fcm_and_listen()
                 self._listening = True
